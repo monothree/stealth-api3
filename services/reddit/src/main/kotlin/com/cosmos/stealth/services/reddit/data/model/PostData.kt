@@ -120,4 +120,6 @@ data class PostData(
     var thumbnail: String? = null
     @Transient
     var crosspost: Crosspost? = null
+    @Transient
+    var hideScore: Boolean = false
 }

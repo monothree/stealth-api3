@@ -19,6 +19,9 @@ enum class ServiceName(val value: String) {
     @Json(name = "teddit")
     teddit("teddit"),
 
+    @Json(name = "redlib")
+    redlib("redlib"),
+
     @Json(name = "lemmy")
     lemmy("lemmy");
 

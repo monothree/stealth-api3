@@ -18,7 +18,7 @@ class GatewayManager(
     fun getServiceGateway(service: Service): ServiceGateway {
         return when (service.name) {
             ServiceName.reddit -> redditGateway
-            ServiceName.teddit -> tedditGateway
+            ServiceName.teddit, ServiceName.redlib -> tedditGateway
             ServiceName.lemmy -> lemmyGateway
         }
     }
