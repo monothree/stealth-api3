@@ -45,11 +45,12 @@ class RedditCookieInitializationInterceptor(private val cookieJar: RedditCookieJ
             val scriptTag = document.selectFirst("script[nonce]")
             val scriptContent = scriptTag?.html() ?: ""
             val solutionValue = extractAndExecuteJavaScriptLogic(scriptContent)
-            val tokenInput = document.selectFirst("input[name=token]")
-            val tokenValue = tokenInput?.attr("value") ?: ""
+            val tokenValue = extractToken(document, htmlBody)
 
             if (solutionValue.isBlank() || tokenValue.isBlank()) {
                 logger.warn("Reddit JSON cookie circumvention: Could not resolve challenge (solution='{}', token='{}', HTTP {})", solutionValue, tokenValue, initCode)
+                val sanitizedSnippet = htmlBody.replace("\\s+".toRegex(), " ").take(1000)
+                logger.warn("Reddit challenge response HTML snippet (first 1000 chars): {}", sanitizedSnippet)
                 return
             }
 
@@ -106,5 +107,70 @@ class RedditCookieInitializationInterceptor(private val cookieJar: RedditCookieJ
             }
             else -> baseValue
         }
+    }
+
+    private fun extractToken(document: org.jsoup.nodes.Document, htmlBody: String): String {
+        // 1. Try common input tag selectors
+        val inputSelectors = listOf(
+            "input[name=token]",
+            "input[name=csrf_token]",
+            "input[name=r_token]",
+            "input[name*=token]",
+            "input#token"
+        )
+        for (selector in inputSelectors) {
+            val element = document.selectFirst(selector)
+            val value = element?.attr("value")?.trim()
+            if (!value.isNullOrBlank()) {
+                logger.debug("Extracted token using selector '{}'", selector)
+                return value
+            }
+        }
+
+        // 2. Try meta tags
+        val metaSelectors = listOf(
+            "meta[name=csrf-token]",
+            "meta[name=token]",
+            "meta[name*=token]"
+        )
+        for (selector in metaSelectors) {
+            val element = document.selectFirst(selector)
+            val value = element?.attr("content")?.trim()
+            if (!value.isNullOrBlank()) {
+                logger.debug("Extracted token using meta selector '{}'", selector)
+                return value
+            }
+        }
+
+        // 3. Regex on raw HTML for input tags (handles non-standard HTML / dynamic templates)
+        val inputRegexes = listOf(
+            """name=["']token["'][^>]*value=["']([^"']+)["']""".toRegex(RegexOption.IGNORE_CASE),
+            """value=["']([^"']+)["'][^>]*name=["']token["']""".toRegex(RegexOption.IGNORE_CASE),
+            """name=["']csrf_token["'][^>]*value=["']([^"']+)["']""".toRegex(RegexOption.IGNORE_CASE),
+            """value=["']([^"']+)["'][^>]*name=["']csrf_token["']""".toRegex(RegexOption.IGNORE_CASE)
+        )
+        for (regex in inputRegexes) {
+            val match = regex.find(htmlBody)
+            if (match != null && match.groupValues[1].isNotBlank()) {
+                logger.debug("Extracted token using input regex")
+                return match.groupValues[1].trim()
+            }
+        }
+
+        // 4. Regex for JavaScript variables in script tags or inline JS
+        val jsRegexes = listOf(
+            """["']?token["']?\s*[:=]\s*["']([a-zA-Z0-9_\-\.]{10,})["']""".toRegex(),
+            """["']?csrf_token["']?\s*[:=]\s*["']([a-zA-Z0-9_\-\.]{10,})["']""".toRegex(),
+            """token=([a-zA-Z0-9_\-\.]{10,})""".toRegex()
+        )
+        for (regex in jsRegexes) {
+            val match = regex.find(htmlBody)
+            if (match != null && match.groupValues[1].isNotBlank()) {
+                logger.debug("Extracted token using JS variable regex")
+                return match.groupValues[1].trim()
+            }
+        }
+
+        return ""
     }
 }
