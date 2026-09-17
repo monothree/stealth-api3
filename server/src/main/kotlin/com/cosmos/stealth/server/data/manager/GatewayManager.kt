@@ -15,9 +15,11 @@ class GatewayManager(
     private val lemmyGateway: LemmyGateway
 ) {
 
+    private val fallbackRedditGateway = FallbackRedditGateway(redditGateway, tedditGateway)
+
     fun getServiceGateway(service: Service): ServiceGateway {
         return when (service.name) {
-            ServiceName.reddit -> redditGateway
+            ServiceName.reddit -> fallbackRedditGateway
             ServiceName.teddit, ServiceName.redlib -> tedditGateway
             ServiceName.lemmy -> lemmyGateway
         }

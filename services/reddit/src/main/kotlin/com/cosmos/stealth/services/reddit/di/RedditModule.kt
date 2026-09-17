@@ -22,6 +22,7 @@ import com.cosmos.stealth.services.reddit.data.model.MoreChild
 import com.cosmos.stealth.services.reddit.data.model.PostChild
 import com.cosmos.stealth.services.reddit.data.remote.JsonInterceptor
 import com.cosmos.stealth.services.reddit.data.remote.RawJsonInterceptor
+import com.cosmos.stealth.services.reddit.data.remote.RedditBrowserHeadersInterceptor
 import com.cosmos.stealth.services.reddit.data.remote.RedditCookieInitializationInterceptor
 import com.cosmos.stealth.services.reddit.data.remote.RedditCookieJar
 import com.cosmos.stealth.services.reddit.data.remote.api.DataRedditApi
@@ -100,6 +101,7 @@ class RedditModule {
     @Named(REDDIT_QUALIFIER)
     fun provideRedditOkHttpClient(cookieJar: RedditCookieJar): OkHttpClient {
         return OkHttpClient.Builder()
+            .addInterceptor(RedditBrowserHeadersInterceptor())
             .addInterceptor(RawJsonInterceptor())
             .addInterceptor(JsonInterceptor())
             .addInterceptor(RedditCookieInitializationInterceptor(cookieJar))
@@ -115,6 +117,7 @@ class RedditModule {
     @Named(REDDIT_SCRAP_QUALIFIER)
     fun provideRedditScrapOkHttpClient(cookieJar: RedditCookieJar): OkHttpClient {
         return OkHttpClient.Builder()
+            .addInterceptor(RedditBrowserHeadersInterceptor())
             .cache(REDDIT_SCRAP_QUALIFIER)
             .connectTimeout(TIMEOUT.value, TIMEOUT.unit)
             .readTimeout(TIMEOUT.value, TIMEOUT.unit)

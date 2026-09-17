@@ -61,6 +61,15 @@ class RedditCookieJar(
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
         if (cookies.isEmpty()) return
         val host = url.host
+
+        // Do not save cookies from old.reddit.com or non-main domains
+        if (host.equals("old.reddit.com", ignoreCase = true) || !host.endsWith("reddit.com")) {
+            return
+        }
+        if (host != "reddit.com" && host != "www.reddit.com") {
+            return
+        }
+
         val existing = cookieStore.computeIfAbsent(host) { mutableListOf() }
         var modified = false
 

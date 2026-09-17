@@ -321,24 +321,11 @@ internal class RedditRepository(
         }
     }
 
-    /**
-     * Fetch data with OAuth/JSON API and fallback to the Scrap API in case of failure
-     */
     private inline fun <T> getResponseWithFallback(
         source: RedditApi,
         apiCall: (RedditApi) -> Resource<T>
     ): Resource<T> {
-        val response = apiCall(source)
-
-        // Original source was Scrap API; return the first response regardless of status
-        if (source is ScrapRedditApi) return response
-
-        return when (response) {
-            // Call was successful; return response
-            is Resource.Success -> response
-            // Something went wrong; retry with scraping
-            else -> apiCall(scrapRedditApi)
-        }
+        return apiCall(source)
     }
 
     companion object {

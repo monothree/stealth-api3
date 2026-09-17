@@ -8,7 +8,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
 
-internal class RedlibApi(
+class RedlibApi(
     private val client: HttpClient
 ) {
     suspend fun getSubreddit(
@@ -160,15 +160,20 @@ internal class RedlibApi(
         }
     }
 
-    private fun getBaseUrl(instance: String): String {
-        return if (instance.startsWith("http://") || instance.startsWith("https://")) {
-            instance.removeSuffix("/")
+    private fun getBaseUrl(instance: String?): String {
+        val target = instance?.takeIf { it.isNotBlank() } ?: DEFAULT_HOST
+        return if (target.startsWith("http://") || target.startsWith("https://")) {
+            target.removeSuffix("/")
         } else {
-            "https://$instance"
+            "https://$target"
         }
     }
 
     companion object {
-        const val BASE_URL = "https://redlib.example.com"
+        val DEFAULT_HOST: String = System.getenv("REDLIB_INSTANCE")
+            ?: System.getProperty("redlib.instance")
+            ?: "redredred.065536.xyz"
+
+        val BASE_URL: String = "https://$DEFAULT_HOST"
     }
 }

@@ -11,15 +11,20 @@ class RedditCookieInitializationInterceptor(private val cookieJar: RedditCookieJ
 
     private val logger = getLogger()
 
+    @Volatile
+    private var cooldownUntilMs: Long = 0L
+
     private fun hasRequiredCookies(): Boolean {
         return cookieJar.hasRequiredCookies()
     }
 
     override fun intercept(chain: Interceptor.Chain): Response {
         if (!hasRequiredCookies()) {
-            synchronized(this) {
-                if (!hasRequiredCookies()) {
-                    initializeCookies(chain)
+            if (System.currentTimeMillis() >= cooldownUntilMs) {
+                synchronized(this) {
+                    if (!hasRequiredCookies() && System.currentTimeMillis() >= cooldownUntilMs) {
+                        initializeCookies(chain)
+                    }
                 }
             }
         }
@@ -34,12 +39,28 @@ class RedditCookieInitializationInterceptor(private val cookieJar: RedditCookieJ
 
             val initRequest = Request.Builder()
                 .url(jsChallengeUrl)
+                .header("User-Agent", RedditBrowserHeadersInterceptor.BROWSER_USER_AGENT)
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Sec-Ch-Ua", "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\"")
+                .header("Sec-Ch-Ua-Mobile", "?0")
+                .header("Sec-Ch-Ua-Platform", "\"Linux\"")
+                .header("Sec-Fetch-Dest", "document")
+                .header("Sec-Fetch-Mode", "navigate")
+                .header("Sec-Fetch-Site", "none")
+                .header("Sec-Fetch-User", "?1")
                 .build()
 
             var response = chain.proceed(initRequest)
             val initCode = response.code
             val htmlBody = response.body?.string() ?: ""
             response.close()
+
+            if (htmlBody.contains("recaptcha") || htmlBody.contains("Prove your humanity")) {
+                logger.warn("Reddit served interactive reCAPTCHA ('Prove your humanity'). Cloud IP is rate-limited. Backing off circumvention for 15 minutes.")
+                cooldownUntilMs = System.currentTimeMillis() + (15 * 60 * 1000L)
+                return
+            }
 
             val document = Jsoup.parse(htmlBody)
             val scriptTag = document.selectFirst("script[nonce]")
@@ -59,6 +80,17 @@ class RedditCookieInitializationInterceptor(private val cookieJar: RedditCookieJ
 
             val rdtCookieRequest = Request.Builder()
                 .url(rdtCookieUrl)
+                .header("User-Agent", RedditBrowserHeadersInterceptor.BROWSER_USER_AGENT)
+                .header("Referer", "https://www.reddit.com/")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Sec-Ch-Ua", "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\"")
+                .header("Sec-Ch-Ua-Mobile", "?0")
+                .header("Sec-Ch-Ua-Platform", "\"Linux\"")
+                .header("Sec-Fetch-Dest", "document")
+                .header("Sec-Fetch-Mode", "navigate")
+                .header("Sec-Fetch-Site", "same-origin")
+                .header("Sec-Fetch-User", "?1")
                 .build()
 
             response = chain.proceed(rdtCookieRequest)
