@@ -7,6 +7,6 @@ import org.koin.core.annotation.Single
 class ServicesService {
 
     fun getServices(): List<ServiceName> {
-        return ServiceName.values().toList()
+        return listOf(ServiceName.reddit, ServiceName.teddit, ServiceName.lemmy)
     }
 }

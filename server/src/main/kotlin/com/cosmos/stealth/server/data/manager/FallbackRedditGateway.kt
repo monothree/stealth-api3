@@ -47,7 +47,7 @@ class FallbackRedditGateway(
             instance
         }
         return service.copy(
-            name = ServiceName.redlib,
+            name = service.name,
             instance = targetInstance
         )
     }

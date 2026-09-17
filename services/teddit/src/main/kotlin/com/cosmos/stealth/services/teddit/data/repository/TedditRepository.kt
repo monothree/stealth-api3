@@ -277,7 +277,7 @@ internal class TedditRepository(
 
     private fun Request.getRequest(): Request {
         val instance = getInstance()
-        return this.copy(service = service.copy(name = ServiceName.redlib, instance = instance))
+        return this.copy(service = service.copy(instance = instance))
     }
 
     companion object {
