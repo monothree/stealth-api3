@@ -10,7 +10,6 @@ import com.cosmos.stealth.services.teddit.data.scraper.redlib.RedlibDeepReplyReg
 import com.cosmos.stealth.services.teddit.di.TedditModule.Qualifier.TEDDIT_QUALIFIER
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
-import io.ktor.client.plugins.BrowserUserAgent
 import okhttp3.OkHttpClient
 import org.koin.core.annotation.ComponentScan
 import org.koin.core.annotation.Module
@@ -51,8 +50,6 @@ class TedditModule {
         @Named(TEDDIT_QUALIFIER) okHttpClient: OkHttpClient
     ): HttpClient {
         return HttpClient(OkHttp) {
-            BrowserUserAgent()
-
             engine {
                 preconfigured = okHttpClient
             }
