@@ -8,6 +8,7 @@ import com.cosmos.stealth.core.model.api.Feed
 import com.cosmos.stealth.core.model.api.Feedable
 import com.cosmos.stealth.core.model.api.Post
 import com.cosmos.stealth.core.model.api.SearchResults
+import com.cosmos.stealth.core.model.api.ServiceName
 import com.cosmos.stealth.core.model.api.UserInfo
 import com.cosmos.stealth.core.model.data.Request
 import com.cosmos.stealth.core.network.util.Resource
@@ -266,10 +267,17 @@ internal class TedditRepository(
         }
     }
 
-    private fun Request.getInstance(): String = service.instance ?: BASE_URL.host
+    private fun Request.getInstance(): String {
+        val inst = service.instance
+        if (inst.isNullOrBlank() || inst.contains("teddit", ignoreCase = true) || inst.contains("reddit.com", ignoreCase = true)) {
+            return BASE_URL.host
+        }
+        return inst
+    }
 
     private fun Request.getRequest(): Request {
-        return this.copy(service = service.copy(instance = service.instance ?: BASE_URL.host))
+        val instance = getInstance()
+        return this.copy(service = service.copy(name = ServiceName.redlib, instance = instance))
     }
 
     companion object {
