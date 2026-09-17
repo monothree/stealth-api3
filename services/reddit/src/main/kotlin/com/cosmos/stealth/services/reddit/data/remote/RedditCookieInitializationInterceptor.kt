@@ -17,7 +17,11 @@ class RedditCookieInitializationInterceptor(private val cookieJar: RedditCookieJ
 
     override fun intercept(chain: Interceptor.Chain): Response {
         if (!hasRequiredCookies()) {
-            initializeCookies(chain)
+            synchronized(this) {
+                if (!hasRequiredCookies()) {
+                    initializeCookies(chain)
+                }
+            }
         }
 
         return chain.proceed(chain.request())
@@ -25,6 +29,7 @@ class RedditCookieInitializationInterceptor(private val cookieJar: RedditCookieJ
 
     private fun initializeCookies(chain: Interceptor.Chain) {
         try {
+            logger.info("Initializing Reddit JSON cookie circumvention (solving JS challenge)...")
             val jsChallengeUrl = "https://www.reddit.com/"
 
             val initRequest = Request.Builder()
@@ -32,6 +37,7 @@ class RedditCookieInitializationInterceptor(private val cookieJar: RedditCookieJ
                 .build()
 
             var response = chain.proceed(initRequest)
+            val initCode = response.code
             val htmlBody = response.body?.string() ?: ""
             response.close()
 
@@ -41,6 +47,13 @@ class RedditCookieInitializationInterceptor(private val cookieJar: RedditCookieJ
             val solutionValue = extractAndExecuteJavaScriptLogic(scriptContent)
             val tokenInput = document.selectFirst("input[name=token]")
             val tokenValue = tokenInput?.attr("value") ?: ""
+
+            if (solutionValue.isBlank() || tokenValue.isBlank()) {
+                logger.warn("Reddit JSON cookie circumvention: Could not resolve challenge (solution='{}', token='{}', HTTP {})", solutionValue, tokenValue, initCode)
+                return
+            }
+
+            logger.info("Reddit JS challenge solved successfully (token length: {}), requesting session cookies...", tokenValue.length)
             val rdtCookieUrl = "https://www.reddit.com/?solution=${solutionValue}&js_challenge=1&token=${tokenValue}&jsc_orig_r="
 
             val rdtCookieRequest = Request.Builder()
@@ -48,12 +61,17 @@ class RedditCookieInitializationInterceptor(private val cookieJar: RedditCookieJ
                 .build()
 
             response = chain.proceed(rdtCookieRequest)
+            val statusCode = response.code
             response.close()
 
-            logger.debug("Cookies Generated!")
+            if (hasRequiredCookies()) {
+                logger.info("Reddit JSON cookie circumvention status: SUCCESS (token_v2 acquired, HTTP {})", statusCode)
+            } else {
+                logger.warn("Reddit JSON cookie circumvention status: FAILED (token_v2 not present in cookie jar, HTTP {})", statusCode)
+            }
 
         } catch (e: Exception) {
-            logger.error("Failed to initialize cookies", e)
+            logger.error("Reddit JSON cookie circumvention status: ERROR - {}", e.message, e)
         }
     }
 

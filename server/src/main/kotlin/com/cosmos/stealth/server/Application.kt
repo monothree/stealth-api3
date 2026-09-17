@@ -1,5 +1,6 @@
 package com.cosmos.stealth.server
 
+import com.cosmos.stealth.server.data.config.configureAccessLogging
 import com.cosmos.stealth.server.data.config.configureCaching
 import com.cosmos.stealth.server.data.config.configureContentNegotiation
 import com.cosmos.stealth.server.data.config.configureDependencyInjection
@@ -17,6 +18,7 @@ fun main(args: Array<String>) {
 
 fun Application.main() {
     configureDependencyInjection()
+    configureAccessLogging()
     configureCaching()
     configureContentNegotiation()
     configureForwardedHeaders()

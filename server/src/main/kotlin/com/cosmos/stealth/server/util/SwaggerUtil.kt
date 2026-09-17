@@ -1,11 +1,13 @@
 package com.cosmos.stealth.server.util
 
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.fromFilePath
 import io.ktor.server.application.call
 import io.ktor.server.html.respondHtml
 import io.ktor.server.plugins.swagger.SwaggerConfig
 import io.ktor.server.request.path
+import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.application
@@ -29,13 +31,9 @@ fun Route.swaggerUI(
 ) {
     val config = SwaggerConfig().apply(block)
 
-    val resource = application.environment.classLoader.getResourceAsStream(swaggerFile)?.bufferedReader()
-
-    val api = resource?.readText().orEmpty()
-
     route(path) {
         get(swaggerFile) {
-            call.respondText(api, ContentType.fromFilePath(swaggerFile).firstOrNull())
+            call.respond(HttpStatusCode.NotFound)
         }
         get {
             val fullPath = call.request.path().takeIf { it != "/" }.orEmpty()

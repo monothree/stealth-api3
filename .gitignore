@@ -38,3 +38,6 @@ out/
 /cache/
 
 /services/reddit/src/main/resources/credentials.json
+
+logs/
+*.log
