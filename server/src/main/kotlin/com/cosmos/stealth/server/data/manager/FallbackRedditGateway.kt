@@ -22,6 +22,7 @@ import com.cosmos.stealth.core.network.util.Resource
 import com.cosmos.stealth.services.base.data.ServiceGateway
 import com.cosmos.stealth.services.base.util.extension.isSuccess
 import com.cosmos.stealth.services.reddit.RedditGateway
+import com.cosmos.stealth.services.reddit.util.RedditErrorLogger
 import com.cosmos.stealth.services.teddit.TedditGateway
 import com.cosmos.stealth.services.teddit.data.remote.api.RedlibApi
 
@@ -52,6 +53,14 @@ class FallbackRedditGateway(
         )
     }
 
+    private fun Resource<*>.extractCodeAndMessage(): Pair<Int?, String?> {
+        return when (this) {
+            is Resource.Error -> code to message
+            is Resource.Exception -> 500 to throwable.message
+            else -> null to null
+        }
+    }
+
     override suspend fun getFeed(singleFeedRequest: SingleFeedRequest): Feed {
         if (isOldReddit(singleFeedRequest.service)) {
             logger.info("Reddit Web Scraping (old.reddit.com) requested; routing directly to Redlib ({})", RedlibApi.DEFAULT_HOST)
@@ -62,10 +71,11 @@ class FallbackRedditGateway(
         val status = feed.status.firstOrNull()
 
         if (feed.items.isNotEmpty() || (status != null && status.isSuccess)) {
+            RedditErrorLogger.recordSuccess()
             return feed
         }
 
-        logger.warn("Reddit API getFeed failed (status: {}), falling back to Redlib ({})", status?.code, RedlibApi.DEFAULT_HOST)
+        RedditErrorLogger.logFallback("getFeed", status?.code, status?.message, RedlibApi.DEFAULT_HOST)
         return tedditGateway.getFeed(singleFeedRequest.copy(service = getRedlibService(singleFeedRequest.service)))
     }
 
@@ -76,9 +86,13 @@ class FallbackRedditGateway(
         }
 
         val result = redditGateway.getCommunity(communityRequest)
-        if (result is Resource.Success) return result
+        if (result is Resource.Success) {
+            RedditErrorLogger.recordSuccess()
+            return result
+        }
 
-        logger.warn("Reddit API getCommunity failed, falling back to Redlib ({})", RedlibApi.DEFAULT_HOST)
+        val (code, message) = result.extractCodeAndMessage()
+        RedditErrorLogger.logFallback("getCommunity", code, message, RedlibApi.DEFAULT_HOST)
         return tedditGateway.getCommunity(communityRequest.copy(service = getRedlibService(communityRequest.service)))
     }
 
@@ -89,9 +103,13 @@ class FallbackRedditGateway(
         }
 
         val result = redditGateway.getCommunityInfo(communityInfoRequest)
-        if (result is Resource.Success) return result
+        if (result is Resource.Success) {
+            RedditErrorLogger.recordSuccess()
+            return result
+        }
 
-        logger.warn("Reddit API getCommunityInfo failed, falling back to Redlib ({})", RedlibApi.DEFAULT_HOST)
+        val (code, message) = result.extractCodeAndMessage()
+        RedditErrorLogger.logFallback("getCommunityInfo", code, message, RedlibApi.DEFAULT_HOST)
         return tedditGateway.getCommunityInfo(communityInfoRequest.copy(service = getRedlibService(communityInfoRequest.service)))
     }
 
@@ -102,9 +120,13 @@ class FallbackRedditGateway(
         }
 
         val result = redditGateway.getUser(userRequest)
-        if (result is Resource.Success) return result
+        if (result is Resource.Success) {
+            RedditErrorLogger.recordSuccess()
+            return result
+        }
 
-        logger.warn("Reddit API getUser failed, falling back to Redlib ({})", RedlibApi.DEFAULT_HOST)
+        val (code, message) = result.extractCodeAndMessage()
+        RedditErrorLogger.logFallback("getUser", code, message, RedlibApi.DEFAULT_HOST)
         return tedditGateway.getUser(userRequest.copy(service = getRedlibService(userRequest.service)))
     }
 
@@ -115,9 +137,13 @@ class FallbackRedditGateway(
         }
 
         val result = redditGateway.getUserInfo(userInfoRequest)
-        if (result is Resource.Success) return result
+        if (result is Resource.Success) {
+            RedditErrorLogger.recordSuccess()
+            return result
+        }
 
-        logger.warn("Reddit API getUserInfo failed, falling back to Redlib ({})", RedlibApi.DEFAULT_HOST)
+        val (code, message) = result.extractCodeAndMessage()
+        RedditErrorLogger.logFallback("getUserInfo", code, message, RedlibApi.DEFAULT_HOST)
         return tedditGateway.getUserInfo(userInfoRequest.copy(service = getRedlibService(userInfoRequest.service)))
     }
 
@@ -128,9 +154,13 @@ class FallbackRedditGateway(
         }
 
         val result = redditGateway.getPost(postRequest)
-        if (result is Resource.Success) return result
+        if (result is Resource.Success) {
+            RedditErrorLogger.recordSuccess()
+            return result
+        }
 
-        logger.warn("Reddit API getPost failed, falling back to Redlib ({})", RedlibApi.DEFAULT_HOST)
+        val (code, message) = result.extractCodeAndMessage()
+        RedditErrorLogger.logFallback("getPost", code, message, RedlibApi.DEFAULT_HOST)
         return tedditGateway.getPost(postRequest.copy(service = getRedlibService(postRequest.service)))
     }
 
@@ -142,9 +172,13 @@ class FallbackRedditGateway(
         }
 
         val result = redditGateway.getMoreContent(moreContentRequest)
-        if (result is Resource.Success) return result
+        if (result is Resource.Success) {
+            RedditErrorLogger.recordSuccess()
+            return result
+        }
 
-        logger.warn("Reddit API getMoreContent failed, falling back to Redlib ({})", RedlibApi.DEFAULT_HOST)
+        val (code, message) = result.extractCodeAndMessage()
+        RedditErrorLogger.logFallback("getMoreContent", code, message, RedlibApi.DEFAULT_HOST)
         val fallbackAppendable = moreContentRequest.appendable.copy(service = getRedlibService(moreContentRequest.appendable.service))
         return tedditGateway.getMoreContent(moreContentRequest.copy(appendable = fallbackAppendable))
     }
@@ -156,9 +190,13 @@ class FallbackRedditGateway(
         }
 
         val result = redditGateway.getSearchResults(searchRequest)
-        if (result is Resource.Success) return result
+        if (result is Resource.Success) {
+            RedditErrorLogger.recordSuccess()
+            return result
+        }
 
-        logger.warn("Reddit API getSearchResults failed, falling back to Redlib ({})", RedlibApi.DEFAULT_HOST)
+        val (code, message) = result.extractCodeAndMessage()
+        RedditErrorLogger.logFallback("getSearchResults", code, message, RedlibApi.DEFAULT_HOST)
         return tedditGateway.getSearchResults(searchRequest.copy(service = getRedlibService(searchRequest.service)))
     }
 }

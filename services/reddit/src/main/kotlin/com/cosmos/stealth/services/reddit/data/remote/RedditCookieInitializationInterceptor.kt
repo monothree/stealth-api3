@@ -95,12 +95,14 @@ class RedditCookieInitializationInterceptor(private val cookieJar: RedditCookieJ
 
             response = chain.proceed(rdtCookieRequest)
             val statusCode = response.code
+            val cookieResponseBody = response.body?.string() ?: ""
             response.close()
 
             if (hasRequiredCookies()) {
                 logger.info("Reddit JSON cookie circumvention status: SUCCESS (token_v2 acquired, HTTP {})", statusCode)
             } else {
-                logger.warn("Reddit JSON cookie circumvention status: FAILED (token_v2 not present in cookie jar, HTTP {})", statusCode)
+                val reason = com.cosmos.stealth.services.reddit.util.RedditErrorLogger.extractReason(cookieResponseBody)
+                logger.warn("Reddit JSON cookie circumvention status: FAILED (token_v2 not present in cookie jar, HTTP {}, reason: '{}')", statusCode, reason)
             }
 
         } catch (e: Exception) {

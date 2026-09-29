@@ -75,4 +75,40 @@ class ApplicationTest {
         val textLoaded = jar3.loadForRequest(url)
         assertTrue(textLoaded.any { it.name == "token_v2" && it.value == "seeded_from_browser_999" })
     }
+
+    @Test
+    fun testRedditErrorLoggerExtractsJsonReason() {
+        val raw = """Client request(https://www.reddit.com/r/all/.json) invalid: 403 Forbidden. Text: "{\"message\": \"Forbidden\", \"error\": 403}""""
+        val reason = com.cosmos.stealth.services.reddit.util.RedditErrorLogger.extractReason(raw)
+        assertEquals("Forbidden (error: 403)", reason)
+    }
+
+    @Test
+    fun testRedditErrorLoggerExtractsHtmlBlockReason() {
+        val raw = """Client request(https://www.reddit.com/r/all/.json) invalid: 403 Forbidden. Text: "<!DOCTYPE html><html><head><title>Blocked</title></head><body><h1>You've been blocked by network security</h1><p>Abnormal traffic from your IP.</p></body></html>""""
+        val reason = com.cosmos.stealth.services.reddit.util.RedditErrorLogger.extractReason(raw)
+        assertTrue(reason.contains("Blocked"))
+        assertTrue(reason.contains("You've been blocked by network security"))
+    }
+
+    @Test
+    fun testRedditErrorLoggerExtractsRecaptchaReason() {
+        val html = """<!DOCTYPE html><html><head><title>Reddit - Prove your humanity</title></head><body><h1>Prove your humanity</h1><p>Solve the challenge below</p></body></html>"""
+        val reason = com.cosmos.stealth.services.reddit.util.RedditErrorLogger.extractReason(html)
+        assertTrue(reason.contains("Prove your humanity"))
+    }
+
+    @Test
+    fun testRedditErrorLoggerDeduplicationAndRecovery() {
+        com.cosmos.stealth.services.reddit.util.RedditErrorLogger.resetForTest()
+        val errorMsg = """Client request(https://www.reddit.com/r/all/.json) invalid: 403 Forbidden. Text: "{\"message\": \"Forbidden\", \"error\": 403}""""
+        
+        // Log consecutive failures
+        com.cosmos.stealth.services.reddit.util.RedditErrorLogger.logFallback("getFeed", 403, errorMsg, "redredred.065536.xyz")
+        com.cosmos.stealth.services.reddit.util.RedditErrorLogger.logFallback("getFeed", 403, errorMsg, "redredred.065536.xyz")
+        com.cosmos.stealth.services.reddit.util.RedditErrorLogger.logFallback("getFeed", 403, errorMsg, "redredred.065536.xyz")
+        
+        // Recover
+        com.cosmos.stealth.services.reddit.util.RedditErrorLogger.recordSuccess()
+    }
 }
