@@ -4,6 +4,7 @@ import com.cosmos.stealth.core.common.di.DispatchersModule
 import com.cosmos.stealth.core.common.util.TimeValue
 import com.cosmos.stealth.core.network.di.NetworkModule
 import com.cosmos.stealth.core.network.util.extension.cache
+import com.cosmos.stealth.core.network.util.extension.forwardProxy
 import com.cosmos.stealth.services.reddit.di.RedditModule
 import com.cosmos.stealth.services.teddit.data.remote.api.RedlibApi
 import com.cosmos.stealth.services.teddit.data.scraper.redlib.RedlibDeepReplyRegistry
@@ -37,6 +38,7 @@ class TedditModule {
     @Named(TEDDIT_QUALIFIER)
     fun provideOkHttpClient(): OkHttpClient {
         return OkHttpClient.Builder()
+            .forwardProxy("teddit")
             .cache(TEDDIT_QUALIFIER)
             .connectTimeout(TIMEOUT.value, TIMEOUT.unit)
             .readTimeout(TIMEOUT.value, TIMEOUT.unit)

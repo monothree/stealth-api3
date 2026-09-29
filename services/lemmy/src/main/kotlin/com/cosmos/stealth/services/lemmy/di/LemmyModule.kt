@@ -9,6 +9,7 @@ import com.cosmos.stealth.core.network.data.converter.MoshiContentConverter
 import com.cosmos.stealth.core.network.data.converter.moshi
 import com.cosmos.stealth.core.network.di.NetworkModule
 import com.cosmos.stealth.core.network.util.extension.cache
+import com.cosmos.stealth.core.network.util.extension.forwardProxy
 import com.cosmos.stealth.services.lemmy.di.LemmyModule.Qualifier.LEMMY_QUALIFIER
 import com.squareup.moshi.Moshi
 import io.ktor.client.HttpClient
@@ -54,6 +55,7 @@ class LemmyModule {
     @Named(LEMMY_QUALIFIER)
     fun provideOkHttpClient(): OkHttpClient {
         return OkHttpClient.Builder()
+            .forwardProxy("lemmy")
             .cache(LEMMY_QUALIFIER)
             .connectTimeout(TIMEOUT.value, TIMEOUT.unit)
             .readTimeout(TIMEOUT.value, TIMEOUT.unit)

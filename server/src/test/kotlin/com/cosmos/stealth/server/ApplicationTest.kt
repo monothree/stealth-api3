@@ -111,4 +111,94 @@ class ApplicationTest {
         // Recover
         com.cosmos.stealth.services.reddit.util.RedditErrorLogger.recordSuccess()
     }
+
+    @Test
+    fun testForwardProxyConfigParseHttp() {
+        val cfg = com.cosmos.stealth.core.network.util.ForwardProxyConfig.parse("http://127.0.0.1:8080")
+        kotlin.test.assertNotNull(cfg)
+        assertEquals("http", cfg.scheme)
+        assertEquals("127.0.0.1", cfg.host)
+        assertEquals(8080, cfg.port)
+        kotlin.test.assertNull(cfg.username)
+        kotlin.test.assertNull(cfg.password)
+        assertEquals(java.net.Proxy.Type.HTTP, cfg.proxyType)
+        assertEquals("http://127.0.0.1:8080", cfg.toMaskedString())
+    }
+
+    @Test
+    fun testForwardProxyConfigParseSocks5WithAuth() {
+        val cfg = com.cosmos.stealth.core.network.util.ForwardProxyConfig.parse("socks5://myuser:mypass123@proxy.example.com:1080")
+        kotlin.test.assertNotNull(cfg)
+        assertEquals("socks5", cfg.scheme)
+        assertEquals("proxy.example.com", cfg.host)
+        assertEquals(1080, cfg.port)
+        assertEquals("myuser", cfg.username)
+        assertEquals("mypass123", cfg.password)
+        assertEquals(java.net.Proxy.Type.SOCKS, cfg.proxyType)
+        assertEquals("socks5://myuser:****@proxy.example.com:1080", cfg.toMaskedString())
+    }
+
+    @Test
+    fun testForwardProxyConfigParseSocks5hUrlEncoded() {
+        val cfg = com.cosmos.stealth.core.network.util.ForwardProxyConfig.parse("socks5h://admin:p%40ssword@10.0.0.1:9050/")
+        kotlin.test.assertNotNull(cfg)
+        assertEquals("socks5h", cfg.scheme)
+        assertEquals("10.0.0.1", cfg.host)
+        assertEquals(9050, cfg.port)
+        assertEquals("admin", cfg.username)
+        assertEquals("p@ssword", cfg.password)
+        assertEquals(java.net.Proxy.Type.SOCKS, cfg.proxyType)
+    }
+
+    @Test
+    fun testForwardProxyConfigParseHostPortOnly() {
+        val cfg = com.cosmos.stealth.core.network.util.ForwardProxyConfig.parse("proxy.internal:3128")
+        kotlin.test.assertNotNull(cfg)
+        assertEquals("http", cfg.scheme)
+        assertEquals("proxy.internal", cfg.host)
+        assertEquals(3128, cfg.port)
+        assertEquals(java.net.Proxy.Type.HTTP, cfg.proxyType)
+    }
+
+    @Test
+    fun testForwardProxyConfigParseIpv6() {
+        val cfg = com.cosmos.stealth.core.network.util.ForwardProxyConfig.parse("socks5://[::1]:1080")
+        kotlin.test.assertNotNull(cfg)
+        assertEquals("::1", cfg.host)
+        assertEquals(1080, cfg.port)
+        assertEquals(java.net.Proxy.Type.SOCKS, cfg.proxyType)
+    }
+
+    @Test
+    fun testForwardProxyConfigNullAndBlank() {
+        kotlin.test.assertNull(com.cosmos.stealth.core.network.util.ForwardProxyConfig.parse(null))
+        kotlin.test.assertNull(com.cosmos.stealth.core.network.util.ForwardProxyConfig.parse(""))
+        kotlin.test.assertNull(com.cosmos.stealth.core.network.util.ForwardProxyConfig.parse("   "))
+    }
+
+    @Test
+    fun testForwardProxyConfigResolutionWithSystemProperties() {
+        System.setProperty("forward.proxy", "socks5://global.proxy:1080")
+        try {
+            val global = com.cosmos.stealth.core.network.util.ForwardProxyConfig.resolve(null)
+            kotlin.test.assertNotNull(global)
+            assertEquals("global.proxy", global.host)
+            assertEquals(java.net.Proxy.Type.SOCKS, global.proxyType)
+
+            // Service specific override
+            System.setProperty("reddit.forward.proxy", "http://reddit.proxy:8080")
+            val reddit = com.cosmos.stealth.core.network.util.ForwardProxyConfig.resolve("reddit")
+            kotlin.test.assertNotNull(reddit)
+            assertEquals("reddit.proxy", reddit.host)
+            assertEquals(java.net.Proxy.Type.HTTP, reddit.proxyType)
+
+            // Teddit still falls back to global
+            val teddit = com.cosmos.stealth.core.network.util.ForwardProxyConfig.resolve("teddit")
+            kotlin.test.assertNotNull(teddit)
+            assertEquals("global.proxy", teddit.host)
+        } finally {
+            System.clearProperty("forward.proxy")
+            System.clearProperty("reddit.forward.proxy")
+        }
+    }
 }
