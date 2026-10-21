@@ -14,7 +14,11 @@ class RedlibSearchSubredditScraper(
 ) : RedlibBaseScraper<Listing>(ioDispatcher, instanceBaseUrl) {
 
     override suspend fun scrapDocument(document: Document): Listing {
-        val children = document.select("a.search_subreddit").map { it.toAbout() }
+        val children = document.select("a.search_subreddit")
+            .toList()
+            .filter { it.id() != "more_subreddits" && it.selectFirst("span.search_subreddit_name") != null }
+            .map { it.toAbout() }
+            .filter { (it as AboutChild).data.displayName.isNotBlank() }
 
         return Listing(
             KIND,
@@ -46,7 +50,7 @@ class RedlibSearchSubredditScraper(
             title = name,
             primaryColor = null,
             activeUserCount = null,
-            iconImg = null,
+            iconImg = icon.ifEmpty { null },
             subscribers = subscribers,
             quarantine = null,
             publicDescriptionHtml = description.ifEmpty { null },

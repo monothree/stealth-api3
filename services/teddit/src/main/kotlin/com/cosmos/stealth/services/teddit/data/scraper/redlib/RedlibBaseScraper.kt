@@ -2,6 +2,7 @@ package com.cosmos.stealth.services.teddit.data.scraper.redlib
 
 import com.cosmos.stealth.core.common.util.extension.toSeconds
 import com.cosmos.stealth.core.network.data.scraper.Scraper
+import com.cosmos.stealth.services.teddit.data.remote.api.RedlibApi
 import kotlinx.coroutines.CoroutineDispatcher
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -15,8 +16,18 @@ abstract class RedlibBaseScraper<Result>(
     protected val instanceBaseUrl: String? = null
 ) : Scraper<Result>(ioDispatcher) {
 
-    private val baseHttpUrl: HttpUrl? by lazy {
-        instanceBaseUrl?.toHttpUrlOrNull()
+    protected val normalizedBaseUrl: HttpUrl? by lazy {
+        val raw = instanceBaseUrl?.trim()
+        val withScheme = when {
+            raw.isNullOrBlank() || raw.contains("reddit.com", ignoreCase = true) -> {
+                RedlibApi.BASE_URL
+            }
+            raw.startsWith("http://", ignoreCase = true) || raw.startsWith("https://", ignoreCase = true) -> {
+                raw
+            }
+            else -> "https://$raw"
+        }
+        withScheme.toHttpUrlOrNull()
     }
 
     protected fun parseScore(element: Element?): Int {
@@ -63,17 +74,24 @@ abstract class RedlibBaseScraper<Result>(
             ?: return null
         val href = anchor.attr("href")
         val parsed = href.toHttpUrlOrNull() ?: resolve(href)?.toHttpUrlOrNull()
-        return parsed?.queryParameter("after")
+        val afterFromUrl = parsed?.queryParameter("after")
+        if (!afterFromUrl.isNullOrBlank()) return afterFromUrl
+        return Regex("[?&]after=([^&#]+)").find(href)?.groupValues?.getOrNull(1)
     }
 
-    protected fun resolve(href: String?): String? {
+    fun resolve(href: String?): String? {
         if (href.isNullOrBlank()) return null
         return when {
             href.startsWith("http://", ignoreCase = true) ||
                 href.startsWith("https://", ignoreCase = true) -> href
             href.startsWith("//") -> "https:$href"
+            href.startsWith("/img/") -> "https://i.redd.it/${href.removePrefix("/img/")}"
+            href.startsWith("/preview/external-pre/") -> "https://external-preview.redd.it/${href.removePrefix("/preview/external-pre/")}"
+            href.startsWith("/preview/pre/") -> "https://preview.redd.it/${href.removePrefix("/preview/pre/")}"
+            href.startsWith("/preview/") -> "https://preview.redd.it/${href.removePrefix("/preview/")}"
+            href.startsWith("/style/") -> "https://styles.redditmedia.com/${href.removePrefix("/style/")}"
             else -> {
-                val base = baseHttpUrl ?: return href
+                val base = normalizedBaseUrl ?: return href
                 base.resolve(href)?.toString() ?: href
             }
         }
@@ -87,8 +105,26 @@ abstract class RedlibBaseScraper<Result>(
         return resolve(href)
     }
 
-    protected fun canonicalRedditUrl(href: String?): String? {
+    fun canonicalRedditUrl(href: String?): String? {
         if (href.isNullOrBlank()) return null
+        val parsed = href.toHttpUrlOrNull()
+        if (parsed != null) {
+            val host = parsed.host
+            if (host.contains("reddit.com", ignoreCase = true)) {
+                return href
+            }
+            val path = parsed.encodedPath
+            val query = parsed.encodedQuery?.let { "?$it" } ?: ""
+            if (path.startsWith("/r/", ignoreCase = true) ||
+                path.startsWith("/u/", ignoreCase = true) ||
+                path.startsWith("/user/", ignoreCase = true) ||
+                path.startsWith("/comments/", ignoreCase = true) ||
+                path.startsWith("/gallery/", ignoreCase = true)
+            ) {
+                return "https://www.reddit.com$path$query"
+            }
+            return href
+        }
         return when {
             href.startsWith("/r/", ignoreCase = true) ||
                 href.startsWith("/u/", ignoreCase = true) ||

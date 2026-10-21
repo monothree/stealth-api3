@@ -5,6 +5,7 @@ import com.cosmos.stealth.services.reddit.data.model.Sort
 import com.cosmos.stealth.services.reddit.data.model.TimeSorting
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
 
@@ -23,6 +24,7 @@ class RedlibApi(
         val url = "$baseUrl/r/$subreddit/${sort.type}"
         return client.get(url) {
             forward(host, host == null)
+            header("Cookie", "use_hls=on")
             parameter("t", timeSorting?.type)
             parameter("after", after)
         }
@@ -41,6 +43,7 @@ class RedlibApi(
         val url = "$baseUrl/r/$subreddit/search"
         return client.get(url) {
             forward(host, host == null)
+            header("Cookie", "use_hls=on")
             parameter("q", query)
             parameter("restrict_sr", "on")
             parameter("sort", sort?.type)
@@ -60,6 +63,7 @@ class RedlibApi(
         val url = "$baseUrl/$cleanPermalink"
         return client.get(url) {
             forward(host, host == null)
+            header("Cookie", "use_hls=on")
             parameter("sort", sort.type)
         }
     }
@@ -70,6 +74,7 @@ class RedlibApi(
     ): HttpResponse {
         return client.get(url) {
             forward(host, host == null)
+            header("Cookie", "use_hls=on")
         }
     }
 
@@ -82,6 +87,7 @@ class RedlibApi(
         val url = "$baseUrl/user/$user"
         return client.get(url) {
             forward(host, host == null)
+            header("Cookie", "use_hls=on")
         }
     }
 
@@ -97,6 +103,7 @@ class RedlibApi(
         val url = "$baseUrl/user/$user/submitted"
         return client.get(url) {
             forward(host, host == null)
+            header("Cookie", "use_hls=on")
             parameter("sort", sort.type)
             parameter("t", timeSorting?.type)
             parameter("after", after)
@@ -115,6 +122,7 @@ class RedlibApi(
         val url = "$baseUrl/user/$user/comments"
         return client.get(url) {
             forward(host, host == null)
+            header("Cookie", "use_hls=on")
             parameter("sort", sort.type)
             parameter("t", timeSorting?.type)
             parameter("after", after)
@@ -133,6 +141,7 @@ class RedlibApi(
         val url = "$baseUrl/search"
         return client.get(url) {
             forward(host, host == null)
+            header("Cookie", "use_hls=on")
             parameter("q", query)
             parameter("sort", sort?.type)
             parameter("t", timeSorting?.type)
@@ -152,8 +161,9 @@ class RedlibApi(
         val url = "$baseUrl/search"
         return client.get(url) {
             forward(host, host == null)
+            header("Cookie", "use_hls=on")
             parameter("q", query)
-            parameter("type", "sr")
+            parameter("type", "sr_user")
             parameter("sort", sort?.type)
             parameter("t", timeSorting?.type)
             parameter("after", after)

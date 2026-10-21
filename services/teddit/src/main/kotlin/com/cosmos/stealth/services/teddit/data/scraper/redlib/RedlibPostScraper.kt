@@ -1,8 +1,13 @@
 package com.cosmos.stealth.services.teddit.data.scraper.redlib
 
+import com.cosmos.stealth.services.reddit.data.model.GalleryData
+import com.cosmos.stealth.services.reddit.data.model.GalleryDataItem
+import com.cosmos.stealth.services.reddit.data.model.GalleryImage
+import com.cosmos.stealth.services.reddit.data.model.GalleryItem
 import com.cosmos.stealth.services.reddit.data.model.Listing
 import com.cosmos.stealth.services.reddit.data.model.ListingData
 import com.cosmos.stealth.services.reddit.data.model.Media
+import com.cosmos.stealth.services.reddit.data.model.MediaMetadata
 import com.cosmos.stealth.services.reddit.data.model.PostChild
 import com.cosmos.stealth.services.reddit.data.model.PostData
 import com.cosmos.stealth.services.reddit.data.model.RedditVideoPreview
@@ -83,66 +88,225 @@ class RedlibPostScraper(
         val isStickied = hasClass("stickied")
         val isLocked = selectFirst("small.locked") != null
 
+        val galleryFigures = select("div.gallery figure").toList()
+        val thumbnailAnchor = selectFirst("a.post_thumbnail")
+        val isGallery = galleryFigures.isNotEmpty() ||
+            thumbnailAnchor?.selectFirst("span")?.text()?.contains("gallery", ignoreCase = true) == true ||
+            selectFirst(".gallery, span:contains(gallery)") != null
+
         val mediaImage = selectFirst("div.post_media_content a.post_media_image")
         val mediaVideo = selectFirst("div.post_media_content video.post_media_video")
-        val isVideo = mediaVideo != null
-        val isImage = mediaImage != null
+        val isVideoElement = mediaVideo != null
+        val rawVideoSrc = if (isVideoElement) resolveVideoSrc(mediaVideo).orEmpty() else ""
 
-        val mediaUrl = when {
+        val isGif = isVideoElement && (
+            mediaVideo?.hasClass("post_media_gif") == true ||
+            mediaVideo?.hasAttr("loop") == true ||
+            mediaVideo?.selectFirst("a")?.text()?.contains("GIF", ignoreCase = true) == true ||
+            rawVideoSrc.contains(".gif", ignoreCase = true) ||
+            mediaVideo?.attr("poster")?.contains(".gif", ignoreCase = true) == true
+        )
+
+        val gifPath = rawVideoSrc.substringBefore('?').ifEmpty {
+            mediaVideo?.attr("poster")?.substringBefore('?').orEmpty()
+        }
+        val gifFileName = gifPath.substringAfterLast('/')
+        val isRedditGif = isGif && gifFileName.endsWith(".gif", ignoreCase = true)
+        val gifId = if (isRedditGif) gifFileName.substringBeforeLast('.') else null
+        val gifFullUrl = if (gifId != null) "https://i.redd.it/$gifId.gif" else null
+
+        val isVideo = isVideoElement && !isRedditGif
+        var isImage = (mediaImage != null || isRedditGif) && !isGallery && !isVideo
+
+        val rawMediaUrl = when {
+            isRedditGif && gifFullUrl != null -> gifFullUrl
             isImage -> resolve(mediaImage?.attr("href")).orEmpty()
-            isVideo -> resolveVideoSrc(mediaVideo).orEmpty()
+            isVideoElement -> rawVideoSrc
             else -> ""
         }
+        var mediaUrl = rawMediaUrl
 
-        val media: Media? = if (isVideo) {
-            val src = mediaUrl
-            if (src.isNotEmpty()) {
+        val videoId = if (isVideoElement) VIDEO_ID_REGEX.find(rawVideoSrc)?.groupValues?.getOrNull(1) else null
+
+        val media: Media? = if (isVideoElement && !isRedditGif) {
+            val src = rawVideoSrc
+            if (src.isNotEmpty() || videoId != null) {
+                val fallback = if (isGif) src else if (videoId != null) "https://v.redd.it/$videoId/HLSPlaylist.m3u8" else src
+                val dash = if (isGif) null else if (videoId != null) "https://v.redd.it/$videoId/DASHPlaylist.mpd" else null
                 Media(
                     type = null,
                     embed = null,
                     redditVideoPreview = RedditVideoPreview(
-                        fallbackUrl = src,
-                        height = 0,
-                        width = 0,
+                        fallbackUrl = fallback,
+                        height = mediaVideo?.attr("height")?.toIntOrNull() ?: 0,
+                        width = mediaVideo?.attr("width")?.toIntOrNull() ?: 0,
                         duration = 0,
-                        isGif = false,
-                        dashUrl = null
+                        isGif = isGif,
+                        dashUrl = dash
                     )
                 )
             } else null
         } else null
 
-        val thumbnailAnchor = selectFirst("a.post_thumbnail")
+        var galleryData: GalleryData? = null
+        var mediaMetadata: MediaMetadata? = null
+
+        if (galleryFigures.isNotEmpty()) {
+            val dataItems = mutableListOf<GalleryDataItem>()
+            val metaItems = mutableListOf<GalleryItem>()
+
+            galleryFigures.forEachIndexed { index, figure ->
+                val a = figure.selectFirst("a")
+                val img = figure.selectFirst("img")
+                val rawHref = a?.attr("href")?.takeIf { it.isNotBlank() }
+                    ?: img?.attr("src")?.takeIf { it.isNotBlank() }
+                    ?: return@forEachIndexed
+
+                val caption = figure.selectFirst("figcaption p")?.text()?.trim()?.ifEmpty { null }
+                val path = rawHref.substringBefore('?')
+                val fileName = path.substringAfterLast('/')
+                val idCandidate = fileName.substringBeforeLast('.')
+                val mediaId = if (idCandidate.isNotBlank()) idCandidate else "item_$index"
+                val ext = fileName.substringAfterLast('.', "jpg")
+                val fullUrl = if (idCandidate.isNotBlank()) "https://i.redd.it/$mediaId.$ext" else resolve(rawHref).orEmpty()
+                val width = Regex("[?&]width=([0-9]+)").find(rawHref)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+                val height = Regex("[?&]height=([0-9]+)").find(rawHref)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+                val previewUrl = resolve(rawHref).orEmpty()
+
+                dataItems.add(GalleryDataItem(caption = caption, mediaId = mediaId))
+                metaItems.add(
+                    GalleryItem(
+                        mimeType = "image/jpeg",
+                        image = GalleryImage(height = height, width = width, url = fullUrl, mp4 = null),
+                        previews = if (previewUrl.isNotBlank()) listOf(GalleryImage(height, width, previewUrl, null)) else null,
+                        id = mediaId
+                    )
+                )
+            }
+
+            if (dataItems.isNotEmpty()) {
+                galleryData = GalleryData(dataItems)
+                mediaMetadata = MediaMetadata(metaItems)
+            }
+        } else if (isGallery) {
+            val thumbSrc = thumbnailAnchor?.selectFirst("svg image")?.attr("href")
+                ?: thumbnailAnchor?.selectFirst("img")?.attr("src")
+
+            if (!thumbSrc.isNullOrBlank()) {
+                val path = thumbSrc.substringBefore('?')
+                val fileName = path.substringAfterLast('/')
+                val mediaId = fileName.substringBeforeLast('.').ifBlank { "preview_item" }
+                val ext = fileName.substringAfterLast('.', "jpg")
+                val fullUrl = if (mediaId != "preview_item") "https://i.redd.it/$mediaId.$ext" else resolve(thumbSrc).orEmpty()
+                val previewUrl = resolve(thumbSrc).orEmpty()
+
+                galleryData = GalleryData(
+                    listOf(
+                        GalleryDataItem(caption = null, mediaId = mediaId),
+                        GalleryDataItem(caption = null, mediaId = "${mediaId}_2")
+                    )
+                )
+                mediaMetadata = MediaMetadata(
+                    listOf(
+                        GalleryItem(
+                            mimeType = "image/jpeg",
+                            image = GalleryImage(height = 0, width = 0, url = fullUrl, mp4 = null),
+                            previews = if (previewUrl.isNotBlank()) listOf(GalleryImage(0, 0, previewUrl, null)) else null,
+                            id = mediaId
+                        ),
+                        GalleryItem(
+                            mimeType = "image/jpeg",
+                            image = GalleryImage(height = 0, width = 0, url = fullUrl, mp4 = null),
+                            previews = if (previewUrl.isNotBlank()) listOf(GalleryImage(0, 0, previewUrl, null)) else null,
+                            id = "${mediaId}_2"
+                        )
+                    )
+                )
+            }
+        }
+
+        // Direct image fallback for feed items with thumbnail only
+        if (!isImage && !isVideo && !isGallery && thumbnailAnchor != null && !thumbnailAnchor.hasClass("no_thumbnail")) {
+            val thumbSrc = thumbnailAnchor.selectFirst("svg image")?.attr("href")
+                ?: thumbnailAnchor.selectFirst("img")?.attr("src")
+            if (thumbSrc?.startsWith("/preview/pre/") == true || thumbSrc?.startsWith("/img/") == true) {
+                val path = thumbSrc.substringBefore('?')
+                val fileName = path.substringAfterLast('/')
+                val mediaId = fileName.substringBeforeLast('.')
+                val ext = fileName.substringAfterLast('.', "jpg")
+                if (mediaId.isNotBlank()) {
+                    isImage = true
+                    mediaUrl = "https://i.redd.it/$mediaId.$ext"
+                }
+            }
+        }
+
         val thumbnail: String? = when {
-            isImage -> resolve(mediaImage?.attr("href"))
-            isVideo -> resolve(mediaVideo?.attr("poster"))
+            isRedditGif -> resolve(mediaVideo?.attr("poster")) ?: mediaUrl
+            isImage && mediaUrl.isNotBlank() -> mediaUrl
+            isGallery -> galleryData?.items?.firstOrNull()?.let { "https://i.redd.it/${it.mediaId}.jpg" }
+                ?: thumbnailAnchor?.let { resolve(it.selectFirst("svg image")?.attr("href") ?: it.selectFirst("img")?.attr("src")) }
+            isVideoElement -> {
+                val poster = mediaVideo?.attr("poster")?.takeIf { it.isNotBlank() }
+                if (poster != null) {
+                    resolve(poster)
+                } else if (thumbnailAnchor != null && !thumbnailAnchor.hasClass("no_thumbnail")) {
+                    resolve(
+                        thumbnailAnchor.selectFirst("svg image")?.attr("href")
+                            ?: thumbnailAnchor.selectFirst("img")?.attr("src")
+                    )
+                } else {
+                    null
+                }
+            }
             thumbnailAnchor != null && !thumbnailAnchor.hasClass("no_thumbnail") -> {
-                resolve(thumbnailAnchor.selectFirst("svg image")?.attr("href"))
+                resolve(
+                    thumbnailAnchor.selectFirst("svg image")?.attr("href")
+                        ?: thumbnailAnchor.selectFirst("img")?.attr("src")
+                )
             }
             else -> null
         }
 
         val externalHref = selectFirst("a#post_url")?.attr("href")
             ?: thumbnailAnchor?.takeIf { it.hasClass("no_thumbnail") }?.attr("href")
-            ?: thumbnailAnchor?.attr("href")
-        val isExternal = externalHref?.startsWith("http") == true
-        val domain = if (isExternal) {
-            externalHref?.toHttpUrlOrNull()?.host.orEmpty()
-        } else if (isImage) {
-            "i.redd.it"
-        } else if (isVideo) {
-            "v.redd.it"
-        } else {
-            ""
+            ?: thumbnailAnchor?.takeIf { !it.attr("href").startsWith("/r/") && !it.attr("href").startsWith("/comments/") }?.attr("href")
+        val isExternal = externalHref?.startsWith("http", ignoreCase = true) == true
+
+        val domain = when {
+            isExternal -> externalHref?.toHttpUrlOrNull()?.host.orEmpty()
+            isRedditGif -> "i.redd.it"
+            isImage -> "i.redd.it"
+            isVideo -> if (videoId != null) "v.redd.it" else "reddit.com"
+            isGallery -> "reddit.com"
+            else -> ""
         }
 
-        val isSelf = !isImage && !isVideo && !isExternal
+        val isSelf = !isImage && !isVideo && !isExternal && !isGallery && !isRedditGif
+        val canonicalPermalink = canonicalRedditUrl(permalink) ?: permalink
 
-        val url = when {
-            isImage -> mediaUrl
-            isVideo -> mediaUrl
-            isExternal -> externalHref.orEmpty()
-            else -> if (permalink.startsWith("/")) "https://www.reddit.com$permalink" else permalink
+        val urlCandidate = when {
+            isRedditGif && gifFullUrl != null -> gifFullUrl
+            isImage && mediaUrl.isNotBlank() -> mediaUrl
+            isVideo -> {
+                when {
+                    isExternal && !externalHref.isNullOrBlank() -> externalHref
+                    videoId != null -> "https://v.redd.it/$videoId"
+                    canonicalPermalink.isNotBlank() -> canonicalPermalink
+                    mediaUrl.isNotBlank() -> mediaUrl
+                    else -> canonicalPermalink
+                }
+            }
+            isGallery -> {
+                if (postId.isNotBlank()) "https://www.reddit.com/gallery/$postId" else canonicalPermalink
+            }
+            isExternal && !externalHref.isNullOrBlank() -> externalHref
+            else -> canonicalPermalink
+        }
+        val url = if (urlCandidate.isBlank() && postId.isNotBlank()) {
+            "https://www.reddit.com/comments/$postId"
+        } else {
+            urlCandidate
         }
 
         val selfTextHtml = selectFirst("div.post_body")
@@ -161,7 +325,7 @@ class RedlibPostScraper(
             isOC = false,
             flair = flair,
             authorFlair = null,
-            galleryData = null,
+            galleryData = galleryData,
             score = score,
             hint = null,
             isSelf = isSelf,
@@ -183,8 +347,8 @@ class RedlibPostScraper(
             url = url,
             created = created,
             media = media,
-            mediaMetadata = null,
-            isRedditGallery = false,
+            mediaMetadata = mediaMetadata,
+            isRedditGallery = isGallery,
             isVideo = isVideo
         ).apply {
             this.thumbnail = thumbnail
@@ -211,5 +375,6 @@ class RedlibPostScraper(
 
     companion object {
         private const val KIND = "t3"
+        private val VIDEO_ID_REGEX = Regex("/(?:vid|hls)/([a-zA-Z0-9_]+)")
     }
 }

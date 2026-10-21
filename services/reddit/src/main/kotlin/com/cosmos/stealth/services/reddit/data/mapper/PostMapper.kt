@@ -115,7 +115,13 @@ class PostMapper(
                 }
             }
 
-            media?.redditVideoPreview != null || mediaPreview?.videoPreview != null -> MediaType.VIDEO
+            media?.redditVideoPreview != null || mediaPreview?.videoPreview != null -> {
+                if (media?.redditVideoPreview?.isGif == true || mediaPreview?.videoPreview?.isGif == true) {
+                    MediaType.REDDIT_GIF
+                } else {
+                    MediaType.VIDEO
+                }
+            }
 
             mediaPreview?.images?.getOrNull(0)?.variants?.mp4 != null -> MediaType.VIDEO
 

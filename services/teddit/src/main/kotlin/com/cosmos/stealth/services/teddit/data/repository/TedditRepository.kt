@@ -16,11 +16,17 @@ import com.cosmos.stealth.services.reddit.data.mapper.CommentMapper
 import com.cosmos.stealth.services.reddit.data.mapper.CommunityMapper
 import com.cosmos.stealth.services.reddit.data.mapper.PostMapper
 import com.cosmos.stealth.services.reddit.data.mapper.UserMapper
+import com.cosmos.stealth.services.reddit.data.model.Child
+import com.cosmos.stealth.services.reddit.data.model.CommentChild
+import com.cosmos.stealth.services.reddit.data.model.CommentData
 import com.cosmos.stealth.services.reddit.data.model.Data
 import com.cosmos.stealth.services.reddit.data.model.JsonMore
 import com.cosmos.stealth.services.reddit.data.model.Listing
 import com.cosmos.stealth.services.reddit.data.model.ListingData
+import com.cosmos.stealth.services.reddit.data.model.MoreChild
 import com.cosmos.stealth.services.reddit.data.model.MoreChildren
+import com.cosmos.stealth.services.reddit.data.model.MoreData
+import com.cosmos.stealth.services.reddit.data.model.PostChild
 import com.cosmos.stealth.services.reddit.data.model.Sort
 import com.cosmos.stealth.services.reddit.data.model.Sorting
 import com.cosmos.stealth.services.reddit.data.repository.Repository
@@ -34,7 +40,9 @@ import com.cosmos.stealth.services.teddit.data.scraper.redlib.RedlibUserScraper
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.koin.core.annotation.Named
 import org.koin.core.annotation.Single
@@ -71,7 +79,7 @@ internal class TedditRepository(
                 after,
                 request.info.host
             )
-            RedlibPostScraper(ioDispatcher, instance).scrap(res.bodyAsText())
+            RedlibPostScraper(ioDispatcher, instance).scrap(res.bodyAsText()).enrichGalleries(instance, request.info.host)
         }
 
         return getSubreddit(response, newRequest)
@@ -108,7 +116,7 @@ internal class TedditRepository(
                 after,
                 request.info.host
             )
-            RedlibPostScraper(ioDispatcher, instance).scrap(res.bodyAsText())
+            RedlibPostScraper(ioDispatcher, instance).scrap(res.bodyAsText()).enrichGalleries(instance, request.info.host)
         }
     }
 
@@ -144,8 +152,103 @@ internal class TedditRepository(
             val res = redlibApi.getDeeperReplies(url, request.info.host)
             val body = res.bodyAsText()
             val listing = RedlibCommentScraper(ioDispatcher, newRequest.getInstance(), deepReplyRegistry, appendable.parentLinkId.orEmpty()).scrap(body)
-            MoreChildren(JsonMore(Data(listing.data.children)))
+            val flattened = flattenAndRebaseComments(listing.data.children, appendable.parentId, appendable.depth)
+            MoreChildren(JsonMore(Data(flattened)))
         }
+    }
+
+    private fun flattenAndRebaseComments(
+        children: List<Child>,
+        targetParentId: String?,
+        baseDepth: Int
+    ): List<Child> {
+        val relevantChildren = if (children.size == 1 && children.first() is CommentChild) {
+            val root = children.first() as CommentChild
+            val rootName = root.data.name
+            val rootId = root.data.id
+            val targetId = targetParentId?.removePrefix("t1_")
+            if (rootName == targetParentId || (targetId != null && rootId == targetId) || root.data.depth == 0) {
+                root.data.replies?.data?.children ?: emptyList()
+            } else {
+                children
+            }
+        } else {
+            children
+        }
+
+        val result = mutableListOf<Child>()
+
+        fun flatten(item: Child, currentDepth: Int) {
+            when (item) {
+                is CommentChild -> {
+                    val copy = CommentChild(
+                        data = item.data.copyWith(
+                            depth = currentDepth,
+                            replies = null
+                        )
+                    )
+                    result.add(copy)
+                    item.data.replies?.data?.children?.forEach { child ->
+                        flatten(child, currentDepth + 1)
+                    }
+                }
+                is MoreChild -> {
+                    val copy = MoreChild(
+                        data = item.data.copyWith(
+                            depth = currentDepth
+                        )
+                    )
+                    result.add(copy)
+                }
+                else -> result.add(item)
+            }
+        }
+
+        for (child in relevantChildren) {
+            flatten(child, baseDepth)
+        }
+
+        return result
+    }
+
+    private fun CommentData.copyWith(depth: Int, replies: Listing? = null): CommentData {
+        return CommentData(
+            totalAwards = totalAwards,
+            authorFlairRichText = authorFlairRichText,
+            linkId = linkId,
+            replies = replies,
+            author = author,
+            score = score,
+            awardings = awardings,
+            bodyHtml = bodyHtml,
+            edited = edited,
+            isSubmitter = isSubmitter,
+            stickied = stickied,
+            scoreHidden = scoreHidden,
+            permalink = permalink,
+            id = id,
+            name = name,
+            created = created,
+            controversiality = controversiality,
+            flair = flair,
+            depth = depth,
+            distinguished = distinguished,
+            subreddit = subreddit,
+            linkTitle = linkTitle,
+            linkPermalink = linkPermalink,
+            linkAuthor = linkAuthor
+        )
+    }
+
+    private fun MoreData.copyWith(depth: Int): MoreData {
+        return MoreData(
+            count = count,
+            name = name,
+            id = id,
+            depth = depth,
+            parentId = parentId,
+            children = children.toMutableList()
+        )
     }
 
     override suspend fun getUserInfo(request: Request, user: String): Resource<UserInfo> {
@@ -177,7 +280,7 @@ internal class TedditRepository(
                 after,
                 request.info.host
             )
-            RedlibPostScraper(ioDispatcher, instance).scrap(res.bodyAsText())
+            RedlibPostScraper(ioDispatcher, instance).scrap(res.bodyAsText()).enrichGalleries(instance, request.info.host)
         }
 
         return getUserPosts(response, newRequest)
@@ -227,7 +330,7 @@ internal class TedditRepository(
                 after,
                 request.info.host
             )
-            RedlibPostScraper(ioDispatcher, instance).scrap(res.bodyAsText())
+            RedlibPostScraper(ioDispatcher, instance).scrap(res.bodyAsText()).enrichGalleries(instance, request.info.host)
         }
     }
 
@@ -265,6 +368,51 @@ internal class TedditRepository(
             )
             RedlibSearchSubredditScraper(ioDispatcher, instance).scrap(res.bodyAsText())
         }
+    }
+
+    private suspend fun Listing.enrichGalleries(instance: String?, host: String?): Listing = coroutineScope {
+        val targetInstance = instance ?: BASE_URL.host
+        val newChildren = data.children.map { child ->
+            val postChild = child as? PostChild ?: return@map async { child }
+            val post = postChild.data
+            if (post.isRedditGallery == true && (post.galleryData?.items?.size ?: 0) <= 2 && post.permalink.isNotBlank()) {
+                async {
+                    try {
+                        withTimeoutOrNull(2500L) {
+                            val res = redlibApi.getPost(targetInstance, post.permalink, Sort.HOT, host)
+                            val body = res.bodyAsText()
+                            val singleListing = RedlibPostScraper(ioDispatcher, targetInstance).scrap(body)
+                            val singlePost = (singleListing.data.children.firstOrNull() as? PostChild)?.data
+                            val singleGallery = singlePost?.galleryData
+                            if (singleGallery != null && singleGallery.items.size > 1) {
+                                postChild.copy(
+                                    data = post.copy(
+                                        galleryData = singleGallery,
+                                        mediaMetadata = singlePost.mediaMetadata,
+                                        media = singlePost.media ?: post.media
+                                    )
+                                )
+                            } else {
+                                postChild
+                            }
+                        } ?: postChild
+                    } catch (e: Exception) {
+                        postChild
+                    }
+                }
+            } else {
+                async { child }
+            }
+        }.awaitAll()
+
+        val newData = ListingData(
+            modhash = data.modhash,
+            dist = data.dist,
+            children = newChildren,
+            after = data.after,
+            before = data.before
+        )
+        Listing(kind, newData)
     }
 
     private fun Request.getInstance(): String {

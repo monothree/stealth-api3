@@ -37,7 +37,7 @@ class RedlibSubredditScraper(
             title = title.ifEmpty { name },
             primaryColor = null,
             activeUserCount = activeUsers,
-            iconImg = null,
+            iconImg = icon.ifEmpty { null },
             subscribers = subscribers,
             quarantine = null,
             publicDescriptionHtml = description.ifEmpty { null },

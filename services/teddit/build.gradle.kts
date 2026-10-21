@@ -27,4 +27,7 @@ dependencies {
     ksp("com.squareup.moshi:moshi-kotlin-codegen:${Dependencies.Versions.moshi}")
 
     implementation("org.jsoup:jsoup:${Dependencies.Versions.jsoup}")
+
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:${Dependencies.Versions.kotlin}")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${Dependencies.Versions.coroutines}")
 }
