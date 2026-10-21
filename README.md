@@ -1,6 +1,6 @@
 AI-generated code. All of the changes post the original dev's were done by agy. They're simple changes
 
-Currently, it cannot scrape reddit. If you're planning on deploying this, you must use the `FORCE_REDLIB` and pair it with a `REDLIB_INSTANCE`. This isn't 100% feature parity to the built in scraper but works well enough.
+Currently, it cannot scrape reddit. If you're planning on deploying this, you must use the env variable `FORCE_REDLIB` and pair it with a `REDLIB_INSTANCE`. This isn't 100% feature parity to the built in scraper but works well enough.
 
 ymmv, but, recent commits targets some pr upstream for redlib. I pair this with Nachtalb/redlib's codebase.
 
